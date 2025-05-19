@@ -42,4 +42,5 @@ tflite_model = converter.convert()
 with open("person_detection_quantized.tflite", "wb") as f:
     f.write(tflite_model)
 
-xxd -i person_detection_quantized.tflite > person_detection_model_data.cc
+!xxd -i person_detection_quantized.tflite > person_detection_model.cc
+
