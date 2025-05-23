@@ -1,0 +1,74 @@
+# 📌 1. 필수 라이브러리 로딩
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense
+from sklearn.model_selection import train_test_split
+import os, cv2
+
+# 📌 2. 데이터 로딩 함수 (폴더: dataset/person, dataset/no_person)
+def load_data(data_dir="dataset", image_size=(96,96)):
+    images, labels = [], []
+    for label, category in enumerate(["no_person", "person"]):
+        path = os.path.join(data_dir, category)
+        for img_name in os.listdir(path):
+            img_path = os.path.join(path, img_name)
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            img = cv2.resize(img, image_size)
+            images.append(img)
+            labels.append(label)
+    images = np.array(images).astype("float32") / 255.0
+    return np.expand_dims(images, -1), np.array(labels)
+
+# 📌 3. 데이터셋 로드
+X, y = load_data()
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 📌 4. CNN 모델 구성
+model = Sequential([
+    Conv2D(8, (3,3), activation='relu', input_shape=(96,96,1)),
+    MaxPooling2D((2,2)),
+    Conv2D(16, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
+    Flatten(),
+    Dense(32, activation='relu'),
+    Dense(1, activation='sigmoid')  # 이진 분류
+])
+
+# 📌 5. 컴파일 및 학습
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+history = model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=10, batch_size=16)
+
+# 📌 6. 학습 결과 시각화
+plt.plot(history.history['accuracy'], label='Train Acc')
+plt.plot(history.history['val_accuracy'], label='Val Acc')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# 📌 7. 모델 저장 (HDF5 또는 SavedModel)
+model.save("person_detection_model")
+
+# 📌 8. TFLite 모델 변환 및 저장
+converter = tf.lite.TFLiteConverter.from_saved_model("person_detection_model")
+tflite_model = converter.convert()
+with open("person_detection_model.tflite", "wb") as f:
+    f.write(tflite_model)
+
+# 📌 9. TFLite 양자화 모델 변환 (int8 양자화 예시)
+def representative_dataset():
+    for i in range(100):
+        yield [np.expand_dims(X_train[i], axis=0)]
+
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+
+quant_model = converter.convert()
+with open("person_detection_model_quant.tflite", "wb") as f:
+    f.write(quant_model)
